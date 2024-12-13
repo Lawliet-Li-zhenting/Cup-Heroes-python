@@ -921,7 +921,7 @@ def trigger_random_reward():
     global reward_display, reward_timer, current_tool, tool_used
     rewards = ["Laser*1", "Bomb*1", "Bullets+5"]
     current_tool = random.choice(rewards)  # 随机选择道具
-    current_tool="Bomb*1"
+    # current_tool="Bomb*1"
     reward_display = current_tool
     reward_timer = 600  # 显示时间（帧数，10 秒）
     tool_used = False  # 道具未被使用
