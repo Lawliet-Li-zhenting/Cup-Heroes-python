@@ -1,8 +1,8 @@
 import time
 
-import pgzrun  # 导入游戏库
-import random  # 导入随机库
-import pygame  # 导入 pygame 库
+import pgzrun  
+import random
+import pygame
 import pymunk
 import pymunk.pygame_util
 from pgzero.actor import Actor
@@ -23,10 +23,10 @@ def save_score(score):
     with open(SCORE_FILE, "w") as file:
         file.write(str(score))
 total_score=0
-man_health = 10  # 人物初始血量
-man_max_health = 10  # 最大血量
+man_health = 10000  # 人物初始血量
+man_max_health = 10000  # 最大血量
 platform_health = 10  # 平台初始血量
-
+more_monster=0
 laser_active = False  # 激光是否激活
 laser_display_timer = 0  # 激光显示计时器
 LASER_DISPLAY_TIME = 60  # 激光显示时间（帧数，例如 60 帧约为 1 秒）
@@ -35,6 +35,7 @@ EXPLODE_DISPLAY_TIME = 60
 laser_actor = None  # 激光 Actor
 explode_visible=False
 explode=None
+platform_timer=0
 
 current_tool = None  # 当前道具类型
 tool_used = False  # 道具是否已被使用
@@ -260,8 +261,7 @@ platform_y = multiply_zone_y - 97  # 平台的 Y 坐标
 monsters = []  # 每个怪物存储为字典，包含其 Actor、图片索引和速度
 def spawn_monster():
     """生成一个新的怪物"""
-    global monster_speed_multiplier
-    monster_speed_multiplier-=0.001
+
     # 随机生成怪物的初始位置
     x = int(WIDTH * 8 / 9)  # 横坐标
     y = random.randint(50, 160)  # 纵坐标
@@ -274,10 +274,12 @@ def spawn_monster():
     monster_actor = Actor('zombie_scaled_0', pos=(x, y))  # 使用缩小后的图片
 
     # 将怪物添加到列表中，初始图片索引为 0，速度为 -5（向左移动）
-    monsters.append({'actor': monster_actor, 'image_index': 0, 'speed': -0.3+monster_speed_multiplier})
+    monsters.append({'actor': monster_actor, 'image_index': 0, 'speed': -0.3})
 
 
 def update_monsters():
+    global monster_speed_multiplier
+    global more_monster
     """更新怪物逻辑，包括动画和移动"""
     for monster in monsters[:]:  # 遍历所有怪物
         if "frame_timer" not in monster:
@@ -285,12 +287,15 @@ def update_monsters():
 
         monster["frame_timer"] += 1
         if monster["frame_timer"] >= 5:  # 每 10 帧切换一次图片
+            monster_speed_multiplier -= 0.00005  #增加速度
             monster['image_index'] = (monster['image_index'] + 1) % 4  # 图片索引 0-3 循环
             monster['actor'].image = f'zombie_scaled_{monster["image_index"]}'  # 切换图片
             monster["frame_timer"] = 0  # 重置计时器
+        if monster["frame_timer"] >= 10:
+            more_monster+=1
 
         # 更新怪物位置
-        monster['actor'].x += monster['speed']  # 怪物向左移动
+        monster['actor'].x += monster['speed']+monster_speed_multiplier  # 怪物向左移动
 
         # 如果怪物超出屏幕范围，则移除
         if monster['actor'].x < -50:  # 超出屏幕左边界
@@ -391,10 +396,10 @@ def update():
     global bullet_timer, countdown_timer, countdown_index, countdown_visible, countdown_text, man_visible, man_health, game_over, collected_bullets, back_button_visible
     global double_zone_x_start,double_zone_y_start,double_zone_x_end,double_zone_y_end
     global triple_zone_x_start, triple_zone_y_start, triple_zone_x_end, triple_zone_y_end
-    global platform_exists, platform_health, current_background
+    global platform_exists, platform_health, current_background,platform_timer
     global tool_visible, cooldown_timer, reward_display, reward_timer
     global laser_active, laser_display_timer
-    global explode_display_timer,explode_visible
+    global explode_display_timer,explode_visible,more_monster
     if game_over:
         back_button_visible = True  # 游戏结束时显示返回按钮
         return  # 如果游戏结束，不再更新游戏逻辑
@@ -416,7 +421,7 @@ def update():
     if man_visible:
         if platform_exists and platform_body is None:  # 如果平台需要存在且未初始化
             create_platform()
-        if random.randint(1, 50) == 1:  # 每帧有概率生成一个怪物（控制生成频率）
+        if random.randint(1, 50-more_monster) == 1:  # 每帧有概率生成一个怪物（控制生成频率）
             spawn_monster()
 
         # 检测怪物是否到达人物的 x 坐标
@@ -459,6 +464,7 @@ def update():
 
     update_rewards()
 
+    update_platform()
     # 子弹生成逻辑
     bullet_timer += 1
     if bullet_timer >= 180:
@@ -611,6 +617,7 @@ def update():
                 space.remove(platform_body, platform_shape)  # 从物理空间移除平台
                 platform_exists = False  # 标记平台为不存在
                 current_background = background_3  # 切换背景图
+                platform_timer = 1200
         if bullet_body.position.y > 670:
             if countdown_index == 5:
                 collected_bullets += 1  # 更新收集到的子弹数
@@ -900,8 +907,7 @@ def visualize_multiply_zone():
 
 def create_platform():
     """创建物理平台"""
-    global platform_body, platform_shape
-
+    global platform_body, platform_shape,platform_timer
     if not platform_exists:  # 如果平台标记为不存在，不执行创建
         return
 
@@ -940,6 +946,19 @@ def update_rewards():
         if reward_timer == 0:
             reward_display = None  # 超时后清除显示
             current_tool = None  # 道具失效
+
+def update_platform():
+    """更新奖励计时和状态"""
+    global platform_timer, platform_exists,current_background,platform_health
+    if platform_timer > 0 :
+        platform_timer -= 1
+        # print(platform_timer, platform_exists, current_background)
+    if platform_timer==0 and platform_exists==False:
+        platform_exists=True
+        create_platform()
+        current_background = background_1
+        platform_health = 10
+
 
 
 # 开始运行游戏
