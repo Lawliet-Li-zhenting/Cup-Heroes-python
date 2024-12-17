@@ -1,5 +1,5 @@
 import time
-
+import sys
 import pgzrun  
 import random
 import pygame
@@ -8,6 +8,8 @@ import pymunk.pygame_util
 from pgzero.actor import Actor
 import math
 import os
+sounds.loading.play(-1)
+fight = pygame.mixer.Sound("sounds/fight.wav")
 
 SCORE_FILE = "score_record.txt"  # 保存分数的文件路径
 if os.path.exists(SCORE_FILE):
@@ -23,8 +25,8 @@ def save_score(score):
     with open(SCORE_FILE, "w") as file:
         file.write(str(score))
 total_score=0
-man_health = 10000  # 人物初始血量
-man_max_health = 10000  # 最大血量
+man_health = 10  # 人物初始血量
+man_max_health = 10 # 最大血量
 platform_health = 10  # 平台初始血量
 more_monster=0
 laser_active = False  # 激光是否激活
@@ -36,6 +38,7 @@ laser_actor = None  # 激光 Actor
 explode_visible=False
 explode=None
 platform_timer=0
+time_elapsed=0
 
 current_tool = None  # 当前道具类型
 tool_used = False  # 道具是否已被使用
@@ -54,8 +57,8 @@ WIDTH = 480
 HEIGHT = 700
 TITLE = '动感按钮示例'
 
-state = pygame.transform.scale(pygame.image.load("images/state.png"), (WIDTH//6.7, HEIGHT//3.7))
-pygame.image.save(state, f"images/state.png")
+state1 = pygame.transform.scale(pygame.image.load("images/state1.png"), (WIDTH//2.7, HEIGHT//4.7))
+pygame.image.save(state1, f"images/state1.png")
 
 # 加载并缩放背景图片
 start_background = pygame.transform.scale(pygame.image.load("images/start_background.png"), (WIDTH, HEIGHT))  # 初始背景
@@ -291,8 +294,8 @@ def update_monsters():
             monster['image_index'] = (monster['image_index'] + 1) % 4  # 图片索引 0-3 循环
             monster['actor'].image = f'zombie_scaled_{monster["image_index"]}'  # 切换图片
             monster["frame_timer"] = 0  # 重置计时器
-        if monster["frame_timer"] >= 10:
-            more_monster+=1
+        # if monster["frame_timer"] >= 10:
+        #     more_monster+=1
 
         # 更新怪物位置
         monster['actor'].x += monster['speed']+monster_speed_multiplier  # 怪物向左移动
@@ -360,6 +363,7 @@ def update_manual_bullets():
         # 检测子弹与怪物的碰撞
         for monster in monsters[:]:
             if bullet['actor'].colliderect(monster['actor']):
+                sounds.kill.play()
                 if bullet.get('type') == 'bomb':  # 如果是炸弹
                     explode = Actor('explode', pos=(bullet['actor'].x, bullet['actor'].y))
                     explode_visible = True
@@ -368,7 +372,7 @@ def update_manual_bullets():
                     for m in monsters:
                         distance = math.sqrt(
                             (m['actor'].x - bullet['actor'].x) ** 2 + (m['actor'].y - bullet['actor'].y) ** 2)
-                        if distance < 150:  # 设置炸弹范围
+                        if distance < 120:  # 设置炸弹范围
                             to_remove.append(m)
 
                     # 移除范围内的敌人
@@ -398,15 +402,19 @@ def update():
     global triple_zone_x_start, triple_zone_y_start, triple_zone_x_end, triple_zone_y_end
     global platform_exists, platform_health, current_background,platform_timer
     global tool_visible, cooldown_timer, reward_display, reward_timer
-    global laser_active, laser_display_timer
+    global laser_active, laser_display_timer,time_elapsed
     global explode_display_timer,explode_visible,more_monster
     if game_over:
+        sounds.gameover.play(1)
         back_button_visible = True  # 游戏结束时显示返回按钮
-        return  # 如果游戏结束，不再更新游戏逻辑
+        time.sleep(3)
+        sys.exit()  # 如果游戏结束，不再更新游戏逻辑
 
     if button_visible:  # 检测鼠标是否悬停在按钮上
         check_button(mouse_position)
     elif countdown_visible:  # 倒计时逻辑
+        sounds.loading.stop()
+        sounds.countdown.play(1)
         countdown_timer -= 1
         if countdown_timer <= 0:
             countdown_index += 1
@@ -415,14 +423,24 @@ def update():
                 countdown_timer = 60  # 每个文字显示 1 秒
             else:
                 countdown_visible = False  # 倒计时结束
+                sounds.countdown.stop()
                 man_visible = True  # 显示人物
+                fight.set_volume(0.3)
+                fight.play(-1)
+
 
     # 倒计时结束后，生成怪物
     if man_visible:
         if platform_exists and platform_body is None:  # 如果平台需要存在且未初始化
             create_platform()
-        if random.randint(1, 50-more_monster) == 1:  # 每帧有概率生成一个怪物（控制生成频率）
+        if random.randint(1, max(2, 50 - more_monster)) == 1:  # 最小值设置为 10，防止概率过高
             spawn_monster()
+        time_elapsed += 1  # 每帧增加 1，相当于记录游戏运行的帧数
+
+        # 根据时间动态调整 `more_monster`
+        if time_elapsed % (60 * 2) == 0:  # 每 10 秒（假设帧率为 60 FPS）
+            more_monster += 1  # 增加怪物生成频率
+
 
         # 检测怪物是否到达人物的 x 坐标
         for monster in monsters[:]:
@@ -621,23 +639,51 @@ def update():
         if bullet_body.position.y > 670:
             if countdown_index == 5:
                 collected_bullets += 1  # 更新收集到的子弹数
+                sounds.collect.play()
             space.remove(bullet_body, bullet_shape)
             bullets.remove((bullet_body, bullet_shape, bullet_actor))
 
 
 def draw():
     global double_zone_x_start,double_zone_y_min,double_zone_x_end,double_zone_y_max
-    global laser_active, laser_actor
+    global laser_active, laser_actor,state
     global explode_visible,explode,total_score,Record
     screen.clear()
     screen.blit(current_background, (0, 0))  # 绘制当前背景
 
     if game_over:
+        fight.stop()
         # 游戏结束时显示 Game Over 图片
         if total_score > Record:
             Record = total_score
             save_score(Record)  # 保存到文件
         game_over_image.draw()
+        state=Actor('state1', pos=(WIDTH//2, HEIGHT // 2+80))
+        state.draw()
+        screen.draw.text(
+            f"Record",
+            center=(WIDTH//2 , HEIGHT // 2+50),  # 显示在屏幕左上角
+            fontsize=25,
+            color="green",
+        )
+        screen.draw.text(
+            f"{Record}",
+            center=(WIDTH//2, HEIGHT // 2+70),  # 显示在屏幕左上角
+            fontsize=25,
+            color="green",
+        )
+        screen.draw.text(
+            f"Final Score",
+            center=(WIDTH//2, HEIGHT//2+100),  # 显示在屏幕左上角
+            fontsize=25,
+            color="white",
+        )
+        screen.draw.text(
+            f"{total_score}",
+            center=(WIDTH//2, HEIGHT // 2+120),  # 显示在屏幕左上角
+            fontsize=25,
+            color="white",
+        )
         return  # 退出 draw()，防止其他元素被绘制
 
     if button_visible:  # 主按钮绘制
@@ -713,9 +759,11 @@ def draw():
 
         if laser_active and laser_actor:
             laser_actor.draw()  # 绘制激光
+            sounds.laser.play()
 
         if explode_visible:
             explode.draw()
+            sounds.explode.play()
 
         if tool_visible:
             tool.draw()
@@ -814,6 +862,7 @@ def on_key_down(key):
             elif current_tool == "Bomb*1":
                 use_bomb()
             elif current_tool == "Bullets+5":
+                sounds.more_bullets.play()
                 global collected_bullets
                 collected_bullets += 5
             reward_display = None
@@ -822,6 +871,7 @@ def on_key_down(key):
     if key == keys.SPACE:  # 发射普通子弹
         if man_visible:  # 确保人物已可见
             spawn_manual_bullet()  # 发射水平子弹
+            # sounds.biubiu.play()
         man.image = "man_shooting_scaled"  # 切换图片为 `man_shooting`
     if key == keys.UP:
         moving_up = True
@@ -927,7 +977,7 @@ def trigger_random_reward():
     global reward_display, reward_timer, current_tool, tool_used
     rewards = ["Laser*1", "Bomb*1", "Bullets+5"]
     current_tool = random.choice(rewards)  # 随机选择道具
-    # current_tool="Bomb*1"
+    # current_tool="Bullets+5"
     reward_display = current_tool
     reward_timer = 600  # 显示时间（帧数，10 秒）
     tool_used = False  # 道具未被使用
